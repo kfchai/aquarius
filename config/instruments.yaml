@@ -1,0 +1,52 @@
+# Aquarius recorder config — Stage-0 decisions (see research/recon-report.md)
+#
+# Edge instrument: tokenized-gold cash-and-carry + PAXG/XAUT wrapper-spread.
+#   - Perp leg: Hyperliquid HIP-3 `xyz:GOLD` (~$101M OI, $40M/day, the only liquid gold perp).
+#   - Spot leg: XAUT/PAXG on Binance (both listed in USDT → single-venue wrapper-spread).
+# All numbers per side, in basis points (1 bp = 0.01%).
+
+poll_interval_sec: 10        # snapshot cadence
+flush_interval_sec: 60       # JSONL flush cadence (crash-safe buffering)
+data_dir: data/snapshots
+
+hyperliquid:
+  api_url: "https://api.hyperliquid.xyz/info"
+  timeout_sec: 15
+  # primary gold perp + the live alternates, for liquidity comparison while we collect
+  perps:
+    - { coin: "xyz:GOLD",  dex: "xyz",  label: "perp_gold_xyz" }   # PRIMARY
+    - { coin: "cash:GOLD", dex: "cash", label: "perp_gold_cash" }
+    - { coin: "km:GOLD",   dex: "km",   label: "perp_gold_km" }
+
+cex_spot:
+  - exchange: "binance"
+    symbols:
+      - { symbol: "XAUT/USDT", label: "xaut_binance" }   # tracks spot gold tighter
+      - { symbol: "PAXG/USDT", label: "paxg_binance" }
+  - exchange: "bybit"
+    symbols:
+      - { symbol: "XAUT/USDT", label: "xaut_bybit" }
+  - exchange: "kraken"
+    symbols:
+      - { symbol: "PAXG/USD", label: "paxg_kraken" }
+
+# Derived metrics to compute each snapshot (label pairs must exist above).
+metrics:
+  # wrapper-spread: same-venue PAXG vs XAUT (purest delta-neutral convergence)
+  wrapper_spreads:
+    - { a: "paxg_binance", b: "xaut_binance", name: "paxg_xaut_binance" }
+  # cash-and-carry basis: tokenized-gold spot vs gold perp
+  bases:
+    - { spot: "xaut_binance", perp: "perp_gold_xyz", name: "xaut_vs_perp" }
+    - { spot: "paxg_binance", perp: "perp_gold_xyz", name: "paxg_vs_perp" }
+
+# Per-side fees (bps) for the cost model. Conservative/pessimistic defaults;
+# Stage-1 calibration replaces these with measured values.
+fees_bps:
+  perp_gold_xyz_maker: 1.5       # Hyperliquid base maker (rebate unreachable at <$10k)
+  perp_gold_xyz_taker: 4.5
+  binance_spot_maker: 10.0       # Binance spot 0.10% standard — the real cost wall
+  binance_spot_taker: 10.0
+  bybit_spot_maker: 10.0
+  kraken_spot_maker: 16.0        # Kraken 0.16% maker standard tier
+  drift_perp_maker: -0.25        # benchmark: negative maker fee (crypto perps only)

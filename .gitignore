@@ -1,0 +1,21 @@
+# data is forward-collected, not committed
+data/
+*.jsonl
+*.parquet
+
+# shadow runtime store (SQLite durable record lives on the Railway /data volume)
+*.db
+*.db-shm
+*.db-wal
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+
+# os/editor
+.DS_Store
+.vscode/

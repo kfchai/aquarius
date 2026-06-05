@@ -1,0 +1,12 @@
+# Aquarius POC — recorder + cost model + shadow portal
+# Pinned-ish minimal stack. Python 3.12.
+ccxt>=4.5.0          # CEX public market data
+httpx>=0.27.0        # Hyperliquid info API
+pandas>=2.0.0        # analysis + parquet
+pyarrow>=15.0.0      # parquet engine
+numpy>=1.26.0
+PyYAML>=6.0          # config
+matplotlib>=3.8.0    # shadow portal charts
+flask>=3.0.0         # shadow portal web app
+gunicorn>=21.0.0     # portal production server
+APScheduler>=3.10.0  # portal hourly worker
