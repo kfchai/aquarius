@@ -36,7 +36,7 @@ def cycle():
 PAGE = """
 <!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="refresh" content="180">
+<meta http-equiv="refresh" content="5">
 <title>Aquarius · shadow portal</title>
 <style>
  body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;margin:0;background:#0b1020;color:#e5e7eb}
@@ -58,7 +58,8 @@ PAGE = """
 </style></head><body><div class="wrap">
 <h1>Aquarius · shadow portal <span style="color:#64748b;font-weight:400;font-size:12px">paper — no orders sent</span></h1>
 <div class="sub">cross-sectional reversal basket · {{s.exchange}}/{{s.source}} · {{s.n_coins}} legs ·
- ${{ '{:,.0f}'.format(s.gross) }} gross · {{s.window_days}}d window · updated {{s.updated[:16].replace('T',' ')}}Z</div>
+ ${{ '{:,.0f}'.format(s.gross) }} gross · <b>forward-only</b> ({{s.forward_hours}}h live) ·
+ updated {{s.updated[:16].replace('T',' ')}}Z</div>
 {% if err %}<div class="err">last cycle error: {{err}} &nbsp; (try EXCHANGE=okx or kraken if geo-blocked)</div>{% endif %}
 <div class="cards">
   <div class="card"><div class="k">Net P&L</div><div class="v {{'pos' if s.net_pnl>=0 else 'neg'}}">${{ '{:,}'.format(s.net_pnl) }}</div></div>
@@ -123,8 +124,8 @@ def _boot():
     if pc.load_state() is None:
         threading.Thread(target=cycle, daemon=True).start()   # populate first paint
     sched = BackgroundScheduler(daemon=True)
-    hrs = float(os.environ.get("REFRESH_HOURS", "1"))
-    sched.add_job(cycle, "interval", hours=hrs, id="cycle", max_instances=1, coalesce=True)
+    mins = float(os.environ.get("REFRESH_MINUTES", "3"))   # recompute cadence (live prices move intra-bar)
+    sched.add_job(cycle, "interval", minutes=mins, id="cycle", max_instances=1, coalesce=True)
     sched.start()
 
 

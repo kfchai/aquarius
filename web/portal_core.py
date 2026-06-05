@@ -118,7 +118,7 @@ def load_series():
     con = _db()
     try:
         ts, dl = zip(*con.execute("SELECT ts,delta FROM pnl ORDER BY ts").fetchall()) or ((), ())
-        trades = con.execute("SELECT gross_bps,reason FROM trades").fetchall()
+        trades = con.execute("SELECT gross_bps,reason,exit_ts FROM trades").fetchall()
         live = con.execute("SELECT v FROM meta WHERE k='live_since'").fetchone()
     except ValueError:
         ts, dl, trades, live = (), (), [], None
@@ -141,21 +141,18 @@ def _b64(fig):
 
 
 # ---------- charts ----------
-def fig_capital(days, eq, dd, live_day):
+def fig_capital(days, eq, dd, fwd_hours):
     fig, ax = plt.subplots(2, 1, figsize=(8.4, 5.0), sharex=True,
                            gridspec_kw={"height_ratios": [2.3, 1]})
     ax[0].plot(days, eq, color="#16a34a", lw=1.6); ax[0].fill_between(days, eq, 0, color="#16a34a", alpha=0.12)
     ax[0].axhline(0, color="#888", lw=0.6); ax[0].set_ylabel("cum net $")
-    ax[0].set_title("Capital — paper equity (no orders sent)", fontsize=11, loc="left")
+    ax[0].set_title("Capital — forward paper record (no orders sent)", fontsize=11, loc="left")
     ax[0].grid(alpha=0.25)
-    if live_day is not None and live_day > days[0]:
-        for a in ax:
-            a.axvspan(days[0], live_day, color="#64748b", alpha=0.10)
-        ax[0].axvline(live_day, color="#1d4ed8", ls="--", lw=1.0)
-        ax[0].annotate("live since", (live_day, eq.max() if len(eq) else 0), fontsize=8,
-                       color="#1d4ed8", xytext=(4, -10), textcoords="offset points")
+    if fwd_hours < 2:
+        ax[0].annotate("forward record just started — accumulating…", (0.5, 0.5),
+                       xycoords="axes fraction", ha="center", color="#94a3b8", fontsize=11)
     ax[1].fill_between(days, dd, 0, color="#dc2626", alpha=0.30); ax[1].plot(days, dd, color="#dc2626", lw=0.9)
-    ax[1].set_ylabel("drawdown $"); ax[1].set_xlabel("days (grey = backfilled context · solid = forward)")
+    ax[1].set_ylabel("drawdown $"); ax[1].set_xlabel(f"days forward (live · {fwd_hours}h)")
     ax[1].grid(alpha=0.25)
     fig.tight_layout()
     return _b64(fig)
@@ -249,18 +246,20 @@ def compute():
     persist(pnl_by_ts, res.trades, now_iso)
     ts, deltas, all_trades, live_since = load_series()
 
-    eq = np.cumsum(deltas) if len(deltas) else np.zeros(1)
+    # FORWARD-ONLY: headline stats + curve cover only bars AFTER the portal first ran
+    # (live_since); the backfilled context that seeds the engine is excluded.
+    live_ms = int(pd.Timestamp(live_since).value // 1_000_000) if live_since else (int(ts[0]) if len(ts) else 0)
+    fwd = (ts >= live_ms) if len(ts) else np.zeros(0, bool)
+    f_ts, deltas_f = (ts[fwd], deltas[fwd]) if len(ts) else (ts, deltas)
+    eq = np.cumsum(deltas_f) if len(deltas_f) else np.zeros(1)
     dd = eq - np.maximum.accumulate(eq)
-    sharpe = float(deltas.mean() / deltas.std() * np.sqrt(PPY)) if len(deltas) and deltas.std() > 0 else 0.0
-    span_ms = (ts[-1] - ts[0]) if len(ts) > 1 else 1
+    sharpe = float(deltas_f.mean() / deltas_f.std() * np.sqrt(PPY)) if len(deltas_f) > 1 and deltas_f.std() > 0 else 0.0
+    span_ms = (f_ts[-1] - f_ts[0]) if len(f_ts) > 1 else 1
     yrs = max(span_ms / 1000 / 86400 / 365, 1e-9)
-    days = (ts - ts[0]) / 1000 / 86400 if len(ts) else np.zeros(1)
-    live_day = None
-    if live_since:
-        live_ms = int(pd.Timestamp(live_since).value // 1_000_000)
-        live_day = (live_ms - ts[0]) / 1000 / 86400 if len(ts) else None
-    wins = [t for t in all_trades if t[0] > 0]   # (gross_bps, reason)
-    closed = all_trades
+    days = (f_ts - f_ts[0]) / 1000 / 86400 if len(f_ts) else np.zeros(1)
+    fwd_hours = int(len(f_ts))
+    closed = [t for t in all_trades if t[2] >= live_ms]   # (gross_bps, reason, exit_ts)
+    wins = [t for t in closed if t[0] > 0]
     dti = pd.to_datetime(res.index, unit="ms", utc=True)
     # neutrality monitor stays a CURRENT-window view from the latest run
     win_sp = res.index >= (res.index[-1] - DAYS * 86400 * 1000)
@@ -276,12 +275,12 @@ def compute():
     pos_simple = {c: {"side": p.side} for c, p in res.positions.items()}
 
     reasons = {}
-    for _, reason in closed:
-        reasons[reason] = reasons.get(reason, 0) + 1
+    for t in closed:
+        reasons[t[1]] = reasons.get(t[1], 0) + 1
 
     state = {
         "updated": dti[-1].isoformat(), "computed_at": now_iso,
-        "live_since": live_since, "period_start": pd.to_datetime(int(ts[0]), unit="ms", utc=True).isoformat() if len(ts) else now_iso,
+        "live_since": live_since, "forward_hours": fwd_hours,
         "source": SOURCE, "exchange": EXCHANGE, "n_coins": len(coins), "coins": coins,
         "gross": GROSS, "window_days": DAYS,
         "net_pnl": round(float(eq[-1])), "pct": round(float(eq[-1] / GROSS * 100), 2),
@@ -291,7 +290,7 @@ def compute():
         "n_trades": len(closed), "open_legs": len(res.positions),
         "coin_net": round(float(nd[-1])), "reasons": reasons,
         "positions": posn,
-        "img_capital": fig_capital(days, eq, dd, live_day),
+        "img_capital": fig_capital(days, eq, dd, fwd_hours),
         "img_butterfly": fig_butterfly(res.positions, res.z_last, CFG),
         "img_swarm": fig_swarm(res.z_last, pos_simple, CFG),
         "img_neutral": fig_neutral(nd_days, nd, GROSS),
