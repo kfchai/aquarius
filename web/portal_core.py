@@ -13,6 +13,7 @@ from __future__ import annotations
 import base64
 import io
 import json
+import logging
 import os
 import pathlib
 import sqlite3
@@ -45,6 +46,7 @@ COINS = ["BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "AVAX", "LINK", "LTC", "ADA"
          "NEAR", "DOT", "ATOM", "UNI", "AAVE", "FIL", "ETC", "XLM", "INJ", "ARB",
          "OP", "APT", "SUI", "ICP", "HBAR"]
 CFG = ShadowConfig(gross=GROSS)
+log = logging.getLogger("aquarius")
 
 
 # ---------- data ----------
@@ -234,6 +236,8 @@ def compute():
     rank = dv_all.median().sort_values(ascending=False)
     coins = list(rank.index[:N_COINS])
     close, tr, dv = close_all[coins], tr_all[coins], dv_all[coins]
+    log.info("fetched %d/%d coins (%s) · %d bars · %.1fs", close_all.shape[1], len(COINS),
+             ",".join(coins[:6]) + "…", len(close), time.time() - t0)
 
     res = run_shadow(close, tr, dv, CFG)
     notional = GROSS / len(coins)

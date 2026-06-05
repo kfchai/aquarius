@@ -5,12 +5,16 @@ Run locally:  SOURCE=local python web/app.py
 Deploy:       gunicorn web.app:app --workers 1 --threads 4 --bind 0.0.0.0:$PORT   (workers=1!)
 """
 
+import logging
 import os
+import sys
 import threading
+import time
 import traceback
+from collections import deque
 
 from apscheduler.schedulers.background import BackgroundScheduler
-from flask import Flask, jsonify, redirect, render_template_string
+from flask import Flask, Response, jsonify, redirect, render_template_string
 
 import portal_core as pc
 
@@ -18,17 +22,41 @@ app = Flask(__name__)
 _lock = threading.Lock()
 _status = {"running": False, "last_error": None}
 
+# --- logging: stdout (captured by Railway) + an in-memory ring buffer served at /logs ---
+LOG_BUF = deque(maxlen=400)
+
+
+class _BufHandler(logging.Handler):
+    def emit(self, record):
+        LOG_BUF.append(self.format(record))
+
+
+_fmt = logging.Formatter("%(asctime)sZ %(levelname)s %(message)s", "%Y-%m-%d %H:%M:%S")
+logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdout)])
+_bh = _BufHandler(); _bh.setFormatter(_fmt)
+logging.getLogger().handlers[0].setFormatter(_fmt)
+logging.getLogger().addHandler(_bh)
+logging.getLogger("apscheduler").setLevel(logging.WARNING)   # quiet scheduler chatter
+log = logging.getLogger("aquarius")
+
 
 def cycle():
     if _status["running"]:
+        log.info("cycle skipped — previous run still in progress")
         return
     with _lock:
         _status["running"] = True
+        t0 = time.time()
+        log.info("cycle start — fetching %s/%s, %d coins", pc.EXCHANGE, pc.SOURCE, pc.N_COINS)
         try:
-            pc.compute()
+            s = pc.compute()
             _status["last_error"] = None
+            log.info("cycle ok — forward %dh · net $%s · sharpe %s · open %d legs · win %d%% · %.1fs",
+                     s["forward_hours"], f"{s['net_pnl']:,}", s["sharpe"], s["open_legs"],
+                     s["win_rate"], time.time() - t0)
         except Exception:  # noqa: BLE001
             _status["last_error"] = traceback.format_exc().splitlines()[-1]
+            log.error("cycle FAILED in %.1fs — %s", time.time() - t0, _status["last_error"])
         finally:
             _status["running"] = False
 
@@ -85,7 +113,7 @@ PAGE = """
 </div>
 <div class="sub" style="margin-top:12px">exit reasons: {% for k,v in s.reasons.items() %}{{k}}={{v}} {% endfor %}
  &nbsp;·&nbsp; <form action="/refresh" method="post" style="display:inline"><button class="btn">Refresh now</button></form>
- &nbsp;·&nbsp; <a href="/api/state">JSON</a></div>
+ &nbsp;·&nbsp; <a href="/api/state">JSON</a> &nbsp;·&nbsp; <a href="/logs">logs</a></div>
 </div></body></html>
 """
 
@@ -120,13 +148,23 @@ def api_state():
     return jsonify({k: v for k, v in s.items() if not k.startswith("img_")})
 
 
+@app.route("/logs")
+def logs():
+    body = "\n".join(LOG_BUF) or "(no log lines yet — first cycle may still be running)"
+    return Response(body, mimetype="text/plain")
+
+
 def _boot():
+    mins = float(os.environ.get("REFRESH_MINUTES", "3"))
+    log.info("boot — exchange=%s source=%s coins=%d gross=%s cadence=%smin data_dir=%s",
+             pc.EXCHANGE, pc.SOURCE, pc.N_COINS, f"{pc.GROSS:,.0f}", mins, pc.DATA_DIR)
     if pc.load_state() is None:
+        log.info("no prior state — kicking first cycle")
         threading.Thread(target=cycle, daemon=True).start()   # populate first paint
     sched = BackgroundScheduler(daemon=True)
-    mins = float(os.environ.get("REFRESH_MINUTES", "3"))   # recompute cadence (live prices move intra-bar)
     sched.add_job(cycle, "interval", minutes=mins, id="cycle", max_instances=1, coalesce=True)
     sched.start()
+    log.info("scheduler started — recompute every %s min", mins)
 
 
 _boot()
