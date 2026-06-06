@@ -34,7 +34,7 @@ from aquarius.backtest.history import fetch_ccxt_ohlcv  # noqa: E402
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 EXCHANGE = os.environ.get("EXCHANGE", "bybit")
 SOURCE = os.environ.get("SOURCE", "live")           # 'live' | 'local'
-N_COINS = int(os.environ.get("N_COINS", "20"))
+N_COINS = int(os.environ.get("N_COINS", "28"))   # breadth (findings-13/16)
 GROSS = float(os.environ.get("GROSS", "100000"))
 DAYS = int(os.environ.get("DAYS", "30"))
 DATA_DIR = pathlib.Path(os.environ.get("DATA_DIR", str(ROOT / "data" / "shadow")))
@@ -43,8 +43,8 @@ STATE_FILE = DATA_DIR / "state.json"        # disposable rendered view (atomic w
 DB_FILE = DATA_DIR / "shadow.db"            # durable truth — per-bar P&L + trades (SQLite/WAL)
 
 COINS = ["BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "AVAX", "LINK", "LTC", "ADA",
-         "NEAR", "DOT", "ATOM", "UNI", "AAVE", "FIL", "ETC", "XLM", "INJ", "ARB",
-         "OP", "APT", "SUI", "ICP", "HBAR"]
+         "NEAR", "DOT", "ATOM", "UNI", "AAVE", "FIL", "ETC", "XLM", "ALGO", "ICP",
+         "HBAR", "GRT", "SAND", "MANA", "AXS", "CRV", "INJ", "RUNE", "EGLD", "FLOW"]
 CFG = ShadowConfig(gross=GROSS)
 log = logging.getLogger("aquarius")
 
@@ -93,10 +93,13 @@ def _db():
     con.execute("PRAGMA synchronous=NORMAL")
     con.execute("CREATE TABLE IF NOT EXISTS pnl(ts INTEGER PRIMARY KEY, delta REAL)")
     con.execute("CREATE TABLE IF NOT EXISTS trades(id TEXT PRIMARY KEY, coin TEXT, side INTEGER,"
-                " entry_ts INTEGER, exit_ts INTEGER, gross_bps REAL, reason TEXT, cost_bps REAL DEFAULT 0)")
+                " entry_ts INTEGER, exit_ts INTEGER, gross_bps REAL, reason TEXT,"
+                " cost_bps REAL DEFAULT 0, notional REAL DEFAULT 0)")
     con.execute("CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT)")
-    if "cost_bps" not in [r[1] for r in con.execute("PRAGMA table_info(trades)").fetchall()]:
-        con.execute("ALTER TABLE trades ADD COLUMN cost_bps REAL DEFAULT 0")  # migrate old DBs
+    cols = [r[1] for r in con.execute("PRAGMA table_info(trades)").fetchall()]
+    for c, ddl in (("cost_bps", "REAL DEFAULT 0"), ("notional", "REAL DEFAULT 0")):
+        if c not in cols:
+            con.execute(f"ALTER TABLE trades ADD COLUMN {c} {ddl}")  # migrate old DBs
     return con
 
 
@@ -108,11 +111,11 @@ def persist(pnl_by_ts: dict, trades: list, now_iso: str):
             con.executemany("INSERT INTO pnl(ts,delta) VALUES(?,?) "
                             "ON CONFLICT(ts) DO UPDATE SET delta=excluded.delta",
                             list(pnl_by_ts.items()))
-            con.executemany("INSERT INTO trades(id,coin,side,entry_ts,exit_ts,gross_bps,reason,cost_bps) "
-                            "VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING",
+            con.executemany("INSERT INTO trades(id,coin,side,entry_ts,exit_ts,gross_bps,reason,"
+                            "cost_bps,notional) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING",
                             [(f"{t['exit_ts']}_{t['coin']}", t["coin"], t["side"], t["entry_ts"],
-                              t["exit_ts"], t["gross_bps"], t["reason"], t.get("cost_bps", 0.0))
-                             for t in trades])
+                              t["exit_ts"], t["gross_bps"], t["reason"], t.get("cost_bps", 0.0),
+                              t.get("notional", 0.0)) for t in trades])
             con.execute("INSERT INTO meta(k,v) VALUES('live_since',?) ON CONFLICT(k) DO NOTHING",
                         (now_iso,))
     finally:
@@ -132,20 +135,21 @@ def load_series():
     return np.array(ts, dtype="int64"), np.array(dl, dtype=float), trades, (live[0] if live else None)
 
 
-_COLS = "coin,side,entry_ts,exit_ts,gross_bps,reason,cost_bps"
+_COLS = "coin,side,entry_ts,exit_ts,gross_bps,reason,cost_bps,notional"
 
 
-def _fmt_trades(rows, notional):
-    """Format DB trade rows. pnl = NET (gross residual move − realized round-trip cost) × notional;
-    alloc = capital allocated to the leg (equal-weight notional)."""
+def _fmt_trades(rows, fallback_notional):
+    """Format DB trade rows. pnl = NET (gross move − realized round-trip cost) × the leg's notional;
+    alloc = capital actually allocated to the leg (vol-scaled, stored per trade)."""
     out = []
-    for coin, side, ets, xts, g, reason, cost in rows:
+    for coin, side, ets, xts, g, reason, cost, notion in rows:
+        notion = notion or fallback_notional
         net_bps = g - (cost or 0.0)
         out.append({"coin": coin, "side": "SHORT" if side < 0 else "LONG",
                     "exit": pd.to_datetime(int(xts), unit="ms", utc=True).strftime("%m-%d %H:%M"),
                     "hold": int((xts - ets) / 3_600_000), "reason": reason,
-                    "alloc": round(notional), "gross_bps": round(g), "cost_bps": round(cost or 0.0),
-                    "pnl": round(net_bps / 1e4 * notional)})
+                    "alloc": round(notion), "gross_bps": round(g), "cost_bps": round(cost or 0.0),
+                    "pnl": round(net_bps / 1e4 * notion)})
     return out
 
 
@@ -336,10 +340,11 @@ def compute():
 
     posn = []
     for c, p in sorted(res.positions.items(), key=lambda kv: -abs(res.z_last[kv[0]])):
-        unreal = p.side * (res.resid_last[c] - p.entry_resid) / 1e4 * notional
+        legn = p.notional or notional
+        unreal = p.side * (res.resid_last[c] - p.entry_resid) / 1e4 * legn
         posn.append({"coin": c, "side": "SHORT" if p.side < 0 else "LONG",
                      "z": round(res.z_last[c], 2), "entry_z": round(p.entry_z, 2),
-                     "alloc": round(notional), "unreal": round(unreal)})
+                     "alloc": round(legn), "unreal": round(unreal)})
     pos_simple = {c: {"side": p.side} for c, p in res.positions.items()}
 
     reasons = {}

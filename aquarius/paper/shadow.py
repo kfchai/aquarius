@@ -30,7 +30,11 @@ class ShadowConfig:
     k_vol: float = 0.10
     k_impact: float = 100.0      # impact bps = K*sqrt(participation)
     carry_annual: float = 20.0   # %/yr holding drag (funding/borrow), pessimistic
-    gross: float = 100_000.0     # total gross $ across legs (equal-weight)
+    gross: float = 100_000.0     # total gross $ across legs (avg, when vol-scaled)
+    # --- sizing (findings-15/16: same Sharpe, ~35% smaller tail) ---
+    vol_scaled: bool = True      # size each leg ∝ 1/(trailing residual vol) instead of equal $
+    vol_clip: float = 3.0        # cap the inverse-vol multiplier to [1/clip, clip]
+    vol_window: int = 168        # bars for the trailing residual-vol estimate
     # --- tail guards (findings-13: thin-coin idiosyncratic risk the z-stop alone misses) ---
     max_leg_loss_bps: float = 400.0    # hard per-leg MtM stop on adverse residual move from entry
     min_dollar_vol: float = 250_000.0  # liquidity floor: trailing-median hourly $vol to trade a coin
@@ -46,6 +50,7 @@ class Position:
     entry_ts: int
     entry_z: float
     entry_cost_bps: float = 0.0   # slippage+fees+impact paid on the way in (for net P&L)
+    notional: float = 0.0         # $ allocated to this leg (varies when vol-scaled)
 
 
 @dataclass
@@ -74,7 +79,7 @@ def run_shadow(close: pd.DataFrame, tr: pd.DataFrame, dvol: pd.DataFrame,
     resid, z = residualize(close, cfg)
     coins = list(resid.columns)
     n = len(resid)
-    notional = cfg.gross / len(coins)               # equal-weight $/leg
+    base = cfg.gross / len(coins)                   # avg $/leg
     carry_bar = cfg.carry_annual / 100 * 1e4 / PPY  # bps per bar
     idx = resid.index.to_numpy()
 
@@ -82,6 +87,17 @@ def run_shadow(close: pd.DataFrame, tr: pd.DataFrame, dvol: pd.DataFrame,
     Z = {c: z[c].to_numpy() for c in coins}
     TR = {c: np.nan_to_num(tr.reindex(resid.index)[c].to_numpy()) for c in coins}
     DV = {c: dvol.reindex(resid.index)[c].fillna(dvol[c].median()).to_numpy() for c in coins}
+    # vol-scaled sizing: leg notional ∝ 1/(trailing residual-return vol), capped (findings-15/16)
+    VOL = {c: pd.Series(np.diff(resid[c].to_numpy(), prepend=resid[c].to_numpy()[0]))
+           .rolling(cfg.vol_window, min_periods=24).std().shift(1).to_numpy() for c in coins}
+    _allv = np.concatenate([v[np.isfinite(v)] for v in VOL.values()])
+    vbar = float(np.nanmedian(_allv)) if _allv.size else 1.0
+
+    def leg_notional(c, i):
+        if not cfg.vol_scaled:
+            return base
+        v = VOL[c][i] if (np.isfinite(VOL[c][i]) and VOL[c][i] > 0) else vbar
+        return base * float(np.clip(vbar / v, 1 / cfg.vol_clip, cfg.vol_clip))
     # liquidity floor: trailing-median hourly $vol must clear min_dollar_vol to be tradeable
     LIQ = {c: (dvol.reindex(resid.index)[c].rolling(cfg.liq_window, min_periods=24).median()
                .to_numpy() >= cfg.min_dollar_vol) for c in coins}
@@ -96,25 +112,25 @@ def run_shadow(close: pd.DataFrame, tr: pd.DataFrame, dvol: pd.DataFrame,
     trades: list = []
     cum = 0.0
 
-    def side_cost_bps(c, i):
-        part = min(notional / DV[c][i], 1.0) if DV[c][i] > 0 else 1.0
+    def side_cost_bps(c, i, notion):
+        part = min(notion / DV[c][i], 1.0) if DV[c][i] > 0 else 1.0
         return (cfg.base_bps + cfg.k_vol * TR[c][i]) / 2 + cfg.k_impact * np.sqrt(part)  # bps/side
 
-    def side_cost(c, i):
-        return side_cost_bps(c, i) / 1e4 * notional   # $ per side
+    def side_cost(c, i, notion):
+        return side_cost_bps(c, i, notion) / 1e4 * notion   # $ per side
 
     def close_leg(c, i, p, ri, zdec, reason):
-        nonlocal_pnl = -side_cost(c, i)
+        nonlocal_pnl = -side_cost(c, i, p.notional)
         hold_bars = int((idx[i] - p.entry_ts) / 3_600_000)
         # realized round-trip cost in bps: entry + exit slippage/fees/impact + holding carry+rebalance
-        cost_bps = (p.entry_cost_bps + side_cost_bps(c, i)
+        cost_bps = (p.entry_cost_bps + side_cost_bps(c, i, p.notional)
                     + (carry_bar + cfg.rebalance_bps_per_bar) * hold_bars)
         gross_bps = p.side * (ri - p.entry_resid)
         trades.append({
             "coin": c, "side": p.side, "entry_ts": p.entry_ts, "exit_ts": int(idx[i]),
             "entry_z": p.entry_z, "exit_z": float(zdec) if not np.isnan(zdec) else 0.0,
             "gross_bps": gross_bps, "cost_bps": cost_bps, "net_bps": gross_bps - cost_bps,
-            "reason": reason, "hold_bars": hold_bars,
+            "notional": p.notional, "reason": reason, "hold_bars": hold_bars,
         })
         del pos[c]
         return nonlocal_pnl
@@ -128,7 +144,7 @@ def run_shadow(close: pd.DataFrame, tr: pd.DataFrame, dvol: pd.DataFrame,
             tradeable = LIQ[c][i] and STALE[c][i] < cfg.stale_bars
             p = pos.get(c)
             if p is not None:
-                bar_pnl += (p.side * (ri - rp) - carry_bar - cfg.rebalance_bps_per_bar) / 1e4 * notional
+                bar_pnl += (p.side * (ri - rp) - carry_bar - cfg.rebalance_bps_per_bar) / 1e4 * p.notional
                 loss_bps = p.side * (p.entry_resid - ri)        # >0 = losing
                 if not LIQ[c][i]:
                     reason = "liquidity"
@@ -146,11 +162,13 @@ def run_shadow(close: pd.DataFrame, tr: pd.DataFrame, dvol: pd.DataFrame,
                     bar_pnl += close_leg(c, i, p, ri, zdec, reason)
             elif not np.isnan(zdec) and not np.isnan(zi) and tradeable and abs(zdec) >= cfg.z_entry:
                 side = -1 if zdec > 0 else 1
-                bar_pnl -= side_cost(c, i)
-                pos[c] = Position(side, ri, int(idx[i]), float(zdec), side_cost_bps(c, i))
+                notion = leg_notional(c, i)
+                bar_pnl -= side_cost(c, i, notion)
+                pos[c] = Position(side, ri, int(idx[i]), float(zdec),
+                                  side_cost_bps(c, i, notion), notion)
         cum += bar_pnl
         equity[i] = cum
-        netd[i] = sum(pp.side for pp in pos.values()) * notional
+        netd[i] = sum(pp.side * pp.notional for pp in pos.values())
 
     return ShadowResult(equity, netd, idx, trades, dict(pos),
                         {c: float(R[c][-1]) for c in coins},

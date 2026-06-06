@@ -109,7 +109,7 @@ PAGE = """
 </div>
 <div class="grid" style="margin-top:14px">
   <div class="panel">
-    <div class="ttl">Open positions ({{s.positions|length}}) · ${{ '{:,}'.format(s.positions[0].alloc|default(0)) if s.positions else '0' }}/leg</div>
+    <div class="ttl">Open positions ({{s.positions|length}}) · ${{ '{:,.0f}'.format(s.gross) }} gross · vol-scaled $/leg</div>
     <table><tr><th>coin</th><th>side</th><th>capital $</th><th>z now</th><th>entry z</th><th>unrealized $</th></tr>
     {% for p in s.positions %}<tr><td>{{p.coin}}</td><td>{{p.side}}</td><td>{{ '{:,}'.format(p.alloc|default(0)) }}</td><td>{{p.z}}</td><td>{{p.entry_z}}</td>
      <td class="{{'pos' if p.unreal|default(0)>=0 else 'neg'}}">{{ '{:+,}'.format(p.unreal|default(0)) }}</td></tr>{% endfor %}
