@@ -45,6 +45,7 @@ class Position:
     entry_resid: float
     entry_ts: int
     entry_z: float
+    entry_cost_bps: float = 0.0   # slippage+fees+impact paid on the way in (for net P&L)
 
 
 @dataclass
@@ -95,18 +96,25 @@ def run_shadow(close: pd.DataFrame, tr: pd.DataFrame, dvol: pd.DataFrame,
     trades: list = []
     cum = 0.0
 
-    def side_cost(c, i):
+    def side_cost_bps(c, i):
         part = min(notional / DV[c][i], 1.0) if DV[c][i] > 0 else 1.0
-        return ((cfg.base_bps + cfg.k_vol * TR[c][i]) / 2 + cfg.k_impact * np.sqrt(part)) \
-            / 1e4 * notional   # $ per side
+        return (cfg.base_bps + cfg.k_vol * TR[c][i]) / 2 + cfg.k_impact * np.sqrt(part)  # bps/side
+
+    def side_cost(c, i):
+        return side_cost_bps(c, i) / 1e4 * notional   # $ per side
 
     def close_leg(c, i, p, ri, zdec, reason):
         nonlocal_pnl = -side_cost(c, i)
+        hold_bars = int((idx[i] - p.entry_ts) / 3_600_000)
+        # realized round-trip cost in bps: entry + exit slippage/fees/impact + holding carry+rebalance
+        cost_bps = (p.entry_cost_bps + side_cost_bps(c, i)
+                    + (carry_bar + cfg.rebalance_bps_per_bar) * hold_bars)
+        gross_bps = p.side * (ri - p.entry_resid)
         trades.append({
             "coin": c, "side": p.side, "entry_ts": p.entry_ts, "exit_ts": int(idx[i]),
             "entry_z": p.entry_z, "exit_z": float(zdec) if not np.isnan(zdec) else 0.0,
-            "gross_bps": p.side * (ri - p.entry_resid), "reason": reason,
-            "hold_bars": int((idx[i] - p.entry_ts) / 3_600_000),
+            "gross_bps": gross_bps, "cost_bps": cost_bps, "net_bps": gross_bps - cost_bps,
+            "reason": reason, "hold_bars": hold_bars,
         })
         del pos[c]
         return nonlocal_pnl
@@ -139,7 +147,7 @@ def run_shadow(close: pd.DataFrame, tr: pd.DataFrame, dvol: pd.DataFrame,
             elif not np.isnan(zdec) and not np.isnan(zi) and tradeable and abs(zdec) >= cfg.z_entry:
                 side = -1 if zdec > 0 else 1
                 bar_pnl -= side_cost(c, i)
-                pos[c] = Position(side, ri, int(idx[i]), float(zdec))
+                pos[c] = Position(side, ri, int(idx[i]), float(zdec), side_cost_bps(c, i))
         cum += bar_pnl
         equity[i] = cum
         netd[i] = sum(pp.side for pp in pos.values()) * notional

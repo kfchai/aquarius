@@ -109,19 +109,19 @@ PAGE = """
 </div>
 <div class="grid" style="margin-top:14px">
   <div class="panel">
-    <div class="ttl">Open positions ({{s.positions|length}})</div>
-    <table><tr><th>coin</th><th>side</th><th>z now</th><th>entry z</th><th>unrealized $</th></tr>
-    {% for p in s.positions %}<tr><td>{{p.coin}}</td><td>{{p.side}}</td><td>{{p.z}}</td><td>{{p.entry_z}}</td>
+    <div class="ttl">Open positions ({{s.positions|length}}) · ${{ '{:,}'.format(s.positions[0].alloc) if s.positions else 0 }}/leg</div>
+    <table><tr><th>coin</th><th>side</th><th>capital $</th><th>z now</th><th>entry z</th><th>unrealized $</th></tr>
+    {% for p in s.positions %}<tr><td>{{p.coin}}</td><td>{{p.side}}</td><td>{{ '{:,}'.format(p.alloc) }}</td><td>{{p.z}}</td><td>{{p.entry_z}}</td>
      <td class="{{'pos' if p.unreal>=0 else 'neg'}}">{{ '{:+,}'.format(p.unreal) }}</td></tr>{% endfor %}
-    {% if not s.positions %}<tr><td colspan="5" style="color:#64748b">none open</td></tr>{% endif %}
+    {% if not s.positions %}<tr><td colspan="6" style="color:#64748b">none open</td></tr>{% endif %}
     </table>
   </div>
   <div class="panel">
-    <div class="ttl">Closed positions — forward · {{ctotal}} total (newest first)</div>
-    <table><tr><th>coin</th><th>side</th><th>exit (UTC)</th><th>held h</th><th>exit</th><th>P&L $</th></tr>
-    {% for t in closed %}<tr><td>{{t.coin}}</td><td>{{t.side}}</td><td>{{t.exit}}</td><td>{{t.hold}}</td>
+    <div class="ttl">Closed positions — forward · {{ctotal}} total · P&L net of cost (newest first)</div>
+    <table><tr><th>coin</th><th>side</th><th>capital $</th><th>exit (UTC)</th><th>held h</th><th>exit</th><th>net P&L $</th></tr>
+    {% for t in closed %}<tr><td>{{t.coin}}</td><td>{{t.side}}</td><td>{{ '{:,}'.format(t.alloc) }}</td><td>{{t.exit}}</td><td>{{t.hold}}</td>
      <td>{{t.reason}}</td><td class="{{'pos' if t.pnl>=0 else 'neg'}}">{{ '{:+,}'.format(t.pnl) }}</td></tr>{% endfor %}
-    {% if not closed %}<tr><td colspan="6" style="color:#64748b">none closed yet (forward record just started)</td></tr>{% endif %}
+    {% if not closed %}<tr><td colspan="7" style="color:#64748b">none closed yet (forward record just started)</td></tr>{% endif %}
     </table>
     {% if cpages>1 %}<div class="pg">
       {% if cp>1 %}<a href="?cp={{cp-1}}">‹ prev</a>{% else %}<span class="dim">‹ prev</span>{% endif %}

@@ -93,8 +93,10 @@ def _db():
     con.execute("PRAGMA synchronous=NORMAL")
     con.execute("CREATE TABLE IF NOT EXISTS pnl(ts INTEGER PRIMARY KEY, delta REAL)")
     con.execute("CREATE TABLE IF NOT EXISTS trades(id TEXT PRIMARY KEY, coin TEXT, side INTEGER,"
-                " entry_ts INTEGER, exit_ts INTEGER, gross_bps REAL, reason TEXT)")
+                " entry_ts INTEGER, exit_ts INTEGER, gross_bps REAL, reason TEXT, cost_bps REAL DEFAULT 0)")
     con.execute("CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT)")
+    if "cost_bps" not in [r[1] for r in con.execute("PRAGMA table_info(trades)").fetchall()]:
+        con.execute("ALTER TABLE trades ADD COLUMN cost_bps REAL DEFAULT 0")  # migrate old DBs
     return con
 
 
@@ -106,10 +108,11 @@ def persist(pnl_by_ts: dict, trades: list, now_iso: str):
             con.executemany("INSERT INTO pnl(ts,delta) VALUES(?,?) "
                             "ON CONFLICT(ts) DO UPDATE SET delta=excluded.delta",
                             list(pnl_by_ts.items()))
-            con.executemany("INSERT INTO trades(id,coin,side,entry_ts,exit_ts,gross_bps,reason) "
-                            "VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING",
+            con.executemany("INSERT INTO trades(id,coin,side,entry_ts,exit_ts,gross_bps,reason,cost_bps) "
+                            "VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING",
                             [(f"{t['exit_ts']}_{t['coin']}", t["coin"], t["side"], t["entry_ts"],
-                              t["exit_ts"], t["gross_bps"], t["reason"]) for t in trades])
+                              t["exit_ts"], t["gross_bps"], t["reason"], t.get("cost_bps", 0.0))
+                             for t in trades])
             con.execute("INSERT INTO meta(k,v) VALUES('live_since',?) ON CONFLICT(k) DO NOTHING",
                         (now_iso,))
     finally:
@@ -129,13 +132,21 @@ def load_series():
     return np.array(ts, dtype="int64"), np.array(dl, dtype=float), trades, (live[0] if live else None)
 
 
+_COLS = "coin,side,entry_ts,exit_ts,gross_bps,reason,cost_bps"
+
+
 def _fmt_trades(rows, notional):
-    """Format DB trade rows for display. $ P&L ≈ gross residual move x leg notional."""
-    return [{"coin": coin, "side": "SHORT" if side < 0 else "LONG",
-             "exit": pd.to_datetime(int(xts), unit="ms", utc=True).strftime("%m-%d %H:%M"),
-             "hold": int((xts - ets) / 3_600_000), "reason": reason,
-             "gross_bps": round(g), "pnl": round(g / 1e4 * notional)}
-            for coin, side, ets, xts, g, reason in rows]
+    """Format DB trade rows. pnl = NET (gross residual move − realized round-trip cost) × notional;
+    alloc = capital allocated to the leg (equal-weight notional)."""
+    out = []
+    for coin, side, ets, xts, g, reason, cost in rows:
+        net_bps = g - (cost or 0.0)
+        out.append({"coin": coin, "side": "SHORT" if side < 0 else "LONG",
+                    "exit": pd.to_datetime(int(xts), unit="ms", utc=True).strftime("%m-%d %H:%M"),
+                    "hold": int((xts - ets) / 3_600_000), "reason": reason,
+                    "alloc": round(notional), "gross_bps": round(g), "cost_bps": round(cost or 0.0),
+                    "pnl": round(net_bps / 1e4 * notional)})
+    return out
 
 
 def db_stats():
@@ -154,8 +165,8 @@ def db_stats():
 def load_recent_trades(live_ms: int, notional: float, limit: int = 30):
     con = _db()
     try:
-        rows = con.execute("SELECT coin,side,entry_ts,exit_ts,gross_bps,reason FROM trades "
-                           "WHERE exit_ts>=? ORDER BY exit_ts DESC LIMIT ?", (live_ms, limit)).fetchall()
+        rows = con.execute(f"SELECT {_COLS} FROM trades WHERE exit_ts>=? "
+                           "ORDER BY exit_ts DESC LIMIT ?", (live_ms, limit)).fetchall()
     finally:
         con.close()
     return _fmt_trades(rows, notional)
@@ -167,8 +178,8 @@ def load_closed_page(live_since: str, notional: float, page: int = 1, per_page: 
     con = _db()
     try:
         total = con.execute("SELECT COUNT(*) FROM trades WHERE exit_ts>=?", (live_ms,)).fetchone()[0]
-        rows = con.execute("SELECT coin,side,entry_ts,exit_ts,gross_bps,reason FROM trades "
-                           "WHERE exit_ts>=? ORDER BY exit_ts DESC LIMIT ? OFFSET ?",
+        rows = con.execute(f"SELECT {_COLS} FROM trades WHERE exit_ts>=? "
+                           "ORDER BY exit_ts DESC LIMIT ? OFFSET ?",
                            (live_ms, per_page, (page - 1) * per_page)).fetchall()
     finally:
         con.close()
@@ -321,7 +332,7 @@ def compute():
         unreal = p.side * (res.resid_last[c] - p.entry_resid) / 1e4 * notional
         posn.append({"coin": c, "side": "SHORT" if p.side < 0 else "LONG",
                      "z": round(res.z_last[c], 2), "entry_z": round(p.entry_z, 2),
-                     "unreal": round(unreal)})
+                     "alloc": round(notional), "unreal": round(unreal)})
     pos_simple = {c: {"side": p.side} for c, p in res.positions.items()}
 
     reasons = {}
