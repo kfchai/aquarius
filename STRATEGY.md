@@ -92,11 +92,51 @@ calm counterparty who steps in and gets paid for patience.
 This is a real, decades-old phenomenon — finance professors call it "short-term reversal,"
 and stat-arb desks have traded it in stocks since the 1990s. **It's not a secret and not a
 trick.** Our advantage isn't that we discovered something new; it's that crypto lets a small
-player actually capture it (see §8).
+player actually capture it (see §9).
 
 ---
 
-## 5. Why many coins instead of one
+## 5. What drives the pattern
+
+The rubber band only works because two forces are out of balance: something **pushes** a coin
+out of line quickly, and something else **pulls** it back more slowly.
+
+**What pushes a coin out of line (the stretch)** — all temporary, non-fundamental pressure:
+
+- **Someone needs to trade now.** A whale, a fund rebalancing, an OTC desk unwinding — a big
+  order in a thin market shoves one coin's price away from its peers. This is the main driver.
+- **Forced liquidations.** Crypto runs on heavy leverage; when a coin dips, leveraged bets get
+  auto-closed, dumping at any price and *overshooting*. (This is exactly why the strategy earns
+  *more* in panics — more forced flow to lean against.)
+- **Retail overreaction.** A tweet, a listing, a fear headline — people pile into or bail out
+  of one coin and overshoot before the news is digested.
+- **Thin, fragmented liquidity.** Shallow order books mean a given order moves the price more —
+  a bigger stretch per dollar traded.
+
+**What pulls it back (the snap)** — because the cause was *flow, not fundamentals*, nothing
+holds the coin out of line:
+
+- **Patient capital steps in.** Market makers and arbitrageurs (and us) buy what's being dumped
+  and sell what's being grabbed; as that demand for immediacy is satisfied, the price settles
+  back in line. *We get paid for being that patient counterparty.*
+- **The overreaction fades** and the leverage flush finishes, so the overshoot bounces back.
+
+**Why we measure it *relative to the pack*.** A coin's move has two parts: the **market-wide**
+part (which can genuinely trend, and does *not* reliably revert) and the **coin-specific** part
+(driven by the flow above, which *does* revert). Subtracting the pack throws away the trending
+part and keeps only the revertible part — which is why this is far more reliable than betting
+on a lone coin reverting.
+
+**The flip side.** Sometimes a coin moves for a *real, lasting* reason — a hack, a delisting, a
+genuine re-rating. Those don't revert, and they're the source of our occasional large losses.
+The bet is that flow-driven dislocations dominate *on average*; the stops (§7) handle the ones
+that don't.
+
+*(Crypto supercharges every one of these forces — see §9.)*
+
+---
+
+## 6. Why many coins instead of one
 
 Three reasons, all important:
 
@@ -110,7 +150,7 @@ Three reasons, all important:
 
 ---
 
-## 6. What can go wrong — and how we handle it
+## 7. What can go wrong — and how we handle it
 
 This strategy has a specific risk personality: **lots of small wins, with occasional larger
 losses.** (The opposite of a lottery ticket.) The dangerous moment is when a coin we're
@@ -135,7 +175,7 @@ purpose.
 
 ---
 
-## 7. The shape of the returns
+## 8. The shape of the returns
 
 - **Wins often, wins small** (historically ~70–75% of trades profitable).
 - **Loses rarely, but a bad leg can be large** — which is exactly why the stops and the
@@ -145,7 +185,7 @@ purpose.
 
 ---
 
-## 8. Why crypto, and not stocks?
+## 9. Why crypto, and not stocks?
 
 The *same* effect exists in stocks, commodities, bonds, and currencies — it's universal. But
 in those markets it's been competed down to razor-thin margins by giant funds with near-zero
@@ -164,7 +204,7 @@ slowly shrink as crypto matures, which we accept.
 
 ---
 
-## 9. How big can it get?
+## 10. How big can it get?
 
 This is a **small-capital edge by nature.** Our own trading starts to move prices once the
 book gets large, which eats the return. Roughly:
@@ -178,7 +218,7 @@ compound slowly, and scale only on proof — which suits its nature perfectly.
 
 ---
 
-## 10. What we've actually proven
+## 11. What we've actually proven
 
 We built this to *try to kill it* cheaply before risking money. It survived every test:
 
@@ -197,7 +237,7 @@ how much. Which is why we're being careful.
 
 ---
 
-## 11. Where it stands now, and what's next
+## 12. Where it stands now, and what's next
 
 - ✅ **Research & backtesting:** passed.
 - ✅ **Paper trading (shadow mode):** built and running. The strategy runs on *live* market
