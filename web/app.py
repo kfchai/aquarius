@@ -109,10 +109,10 @@ PAGE = """
 </div>
 <div class="grid" style="margin-top:14px">
   <div class="panel">
-    <div class="ttl">Open positions ({{s.positions|length}}) · ${{ '{:,}'.format(s.positions[0].alloc) if s.positions else 0 }}/leg</div>
+    <div class="ttl">Open positions ({{s.positions|length}}) · ${{ '{:,}'.format(s.positions[0].alloc|default(0)) if s.positions else '0' }}/leg</div>
     <table><tr><th>coin</th><th>side</th><th>capital $</th><th>z now</th><th>entry z</th><th>unrealized $</th></tr>
-    {% for p in s.positions %}<tr><td>{{p.coin}}</td><td>{{p.side}}</td><td>{{ '{:,}'.format(p.alloc) }}</td><td>{{p.z}}</td><td>{{p.entry_z}}</td>
-     <td class="{{'pos' if p.unreal>=0 else 'neg'}}">{{ '{:+,}'.format(p.unreal) }}</td></tr>{% endfor %}
+    {% for p in s.positions %}<tr><td>{{p.coin}}</td><td>{{p.side}}</td><td>{{ '{:,}'.format(p.alloc|default(0)) }}</td><td>{{p.z}}</td><td>{{p.entry_z}}</td>
+     <td class="{{'pos' if p.unreal|default(0)>=0 else 'neg'}}">{{ '{:+,}'.format(p.unreal|default(0)) }}</td></tr>{% endfor %}
     {% if not s.positions %}<tr><td colspan="6" style="color:#64748b">none open</td></tr>{% endif %}
     </table>
   </div>
@@ -145,6 +145,10 @@ background:#0b1020;color:#e5e7eb;padding:40px"><h2>Aquarius shadow portal</h2>
 @app.route("/")
 def home():
     s = pc.load_state()
+    # stale/old-schema state (e.g. written before a field existed) -> refresh instead of crashing
+    if s and s.get("positions") and "alloc" not in s["positions"][0]:
+        threading.Thread(target=cycle, daemon=True).start()
+        s = None
     if not s:
         return render_template_string(EMPTY, err=_status["last_error"])
     try:
@@ -153,8 +157,13 @@ def home():
         cp = 1
     notional = s["gross"] / max(s["n_coins"], 1)
     closed, ctotal, cpages = pc.load_closed_page(s.get("live_since"), notional, cp)
-    return render_template_string(PAGE, s=s, err=_status["last_error"],
-                                  closed=closed, cp=min(cp, cpages), cpages=cpages, ctotal=ctotal)
+    try:
+        return render_template_string(PAGE, s=s, err=_status["last_error"],
+                                      closed=closed, cp=min(cp, cpages), cpages=cpages, ctotal=ctotal)
+    except Exception:  # noqa: BLE001 — never 500; refresh the (likely stale-schema) view instead
+        log.warning("render failed (%s) — refreshing", traceback.format_exc().splitlines()[-1])
+        threading.Thread(target=cycle, daemon=True).start()
+        return render_template_string(EMPTY, err="refreshing view…")
 
 
 @app.route("/health")
@@ -190,9 +199,8 @@ def _boot():
     if not exists and "DATA_DIR" not in os.environ:
         log.warning("DATA_DIR env not set -> writing to ephemeral %s (LOST on redeploy). "
                     "Mount a Railway volume and set DATA_DIR to its mount path to persist.", pc.DATA_DIR)
-    if pc.load_state() is None:
-        log.info("no prior state — kicking first cycle")
-        threading.Thread(target=cycle, daemon=True).start()   # populate first paint
+    log.info("kicking startup cycle to refresh view")
+    threading.Thread(target=cycle, daemon=True).start()   # always refresh on boot (replaces stale state)
     sched = BackgroundScheduler(daemon=True)
     sched.add_job(cycle, "interval", minutes=mins, id="cycle", max_instances=1, coalesce=True)
     sched.start()
