@@ -25,6 +25,15 @@ actually died in 2022 (LUNA, etc.) aren't in the set. The absolute number is NOT
 But the two findings that matter are robust and *relative*: (1) breadth survives crises, (2)
 vol-scaling caps the tail at no Sharpe cost — both now hold on a wide basket across real cascades.
 
+## NOTE — screening vs honest engine (don't confuse the numbers)
+The table above (`crisis_breadth_test.py`, ret ~146%/yr, Sharpe ~14) uses the LIGHT screening model
+(`run_convergence`, flat 20bps/trade only). The **shadow engine** (`aquarius/paper/shadow.py`, what
+actually runs live) additionally charges funding/borrow carry (~20%/yr), hedge-rebalance drag,
+state-dependent slippage, market impact, and the tail guards — which roughly HALVE it: vol-scaled
+lev-1.0 = **Sharpe ~8.9, ret ~74%/yr, maxDD −5.0%**; lev-1.3 = **~94%/yr, maxDD −6.5%**. Trust the
+shadow-engine numbers for live expectations; the 146% is a relative-comparison screening figure, not
+a forward number (and even ~94% will be somewhat lower live).
+
 ## Verdict
 Breadth + vol-scaling is **safe to make the live default.** Roll both into the shadow engine
 (wider coin set + inverse-residual-vol leg sizing). Tail still guarded by the liquidity/delist

@@ -120,8 +120,19 @@ Plain-language definitions of every term used in [CLAUDE.md](CLAUDE.md) and the 
 - **De-peg** — when a token that's *supposed* to track something (a stablecoin, an LST, a wrapper) breaks away from its peg and **doesn't reconverge**. The dominant tail in our convergence trades; the convexity overlay exists to cover it.
 - **Capacity / capacity headroom** — how much capital a strategy can absorb before its edge compresses. At <$10k we have huge headroom (not a near-term constraint).
 - **Kill-switch** — an automated hard stop that flattens positions / halts trading when a loss limit or anomaly is hit.
+- **Volatility-scaled / risk-parity sizing** — sizing each leg *inversely* to its volatility (notional ∝ 1/vol) so every position contributes ~equal risk. Jumpy, gap-prone coins get less capital → ~35% smaller tail at the *same* Sharpe (findings-15/16). Now the engine default.
+- **Calmar ratio** — annual return ÷ max drawdown ("return per unit of pain"). The right yardstick for tail-aware sizing: vol-scaling raised ours ~36% at an unchanged Sharpe.
+- **Leverage** — deploying more *notional* than *capital* (1.3× = $130k of positions on $100k). Scales return and drawdown ~linearly, Sharpe ~flat. We use it only to spend the risk budget that better sizing frees up — and modestly, since it also amplifies the *unmeasured* (delist/rug) tail.
+- **Return-vs-drawdown frontier** — the trade-off curve across configs; "up-and-left is better." Breadth shifts the whole curve up-and-left (free); leverage slides you along it.
+- **Breadth** — how many legs/coins run at once. The biggest *free* lever found: more legs raises Sharpe *and* lowers drawdown (diversification), up to a per-coin liquidity limit.
+- **Liquidity / depth weighting** — sizing legs by each coin's volume so thin coins don't choke at scale; the alternative to equal-weight once capital is large.
+- **Half-life (of reversion)** — how long a dislocation takes to decay halfway back to the pack (~2 days for our residuals). Sets the natural holding period.
+- **Autocorrelation** — a series' correlation with its own lagged values. *Negative* lag-1 autocorrelation of residual returns = mean reversion — the statistical fingerprint of our edge.
+- **Short-term (cross-sectional) reversal** — the documented factor we trade: a name that has out/under-performed its peers over a short horizon tends to reverse. Universal across markets; we harvest the crypto version.
 
 ## 10. Project-coined strategy vocabulary (quick recap)
+
+- **Reversal basket / cross-sectional residual book** — the project's *current live* strategy (the validated pivot from the butterfly): delta-neutral short-gamma mean-reversion on the residuals of a broad alt basket — long the laggards, short the leaders, bet the gap to the pack closes.
 
 - **The tip / imaginary tip** — see §2. The cost of convexity; ours is virtual and self-financed toward zero.
 - **Manifold / no-arbitrage manifold** — see §4. The "fair" surface our linked instruments should sit on.
