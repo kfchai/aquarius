@@ -18,6 +18,18 @@ import pandas as pd
 
 PPY = 24 * 365
 
+# sector map (findings-17): demean within peer groups to strip sector rotations from the residual
+SECTORS = {
+    "SoV": ["BTC", "LTC", "XRP", "XLM", "ETC", "DOGE", "BCH"],
+    "L1": ["ETH", "SOL", "BNB", "AVAX", "NEAR", "ADA", "DOT", "ATOM", "ALGO", "ICP", "HBAR",
+           "EGLD", "FLOW", "APT", "SUI", "TON", "TRX"],
+    "DeFi": ["UNI", "AAVE", "CRV", "INJ", "RUNE", "MKR", "LDO", "SNX"],
+    "Infra": ["LINK", "GRT", "FIL", "AR", "RNDR"],
+    "Gaming": ["SAND", "MANA", "AXS", "GALA", "APE", "IMX"],
+    "L2": ["ARB", "OP", "MATIC", "POL", "STRK"],
+}
+COIN2SEC = {c: s for s, cs in SECTORS.items() for c in cs}
+
 
 @dataclass
 class ShadowConfig:
@@ -36,6 +48,7 @@ class ShadowConfig:
     vol_scaled: bool = True      # size each leg ∝ 1/(trailing residual vol) instead of equal $
     vol_clip: float = 3.0        # cap the inverse-vol multiplier to [1/clip, clip]
     vol_window: int = 168        # bars for the trailing residual-vol estimate
+    sector_neutral: bool = True  # demean residual within sector (findings-17: +7% Sharpe, smaller tail)
     # --- tail guards (findings-13: thin-coin idiosyncratic risk the z-stop alone misses) ---
     max_leg_loss_bps: float = 400.0    # hard per-leg MtM stop on adverse residual move from entry
     min_dollar_vol: float = 250_000.0  # liquidity floor: trailing-median hourly $vol to trade a coin
@@ -70,7 +83,13 @@ def residualize(close: pd.DataFrame, cfg: ShadowConfig):
     lp = np.log(close)
     ratio = lp.sub(lp.mean(axis=1), axis=0)
     dev = (ratio - ratio.ewm(span=cfg.ema, min_periods=24).mean()) * 1e4
-    resid = dev.sub(dev.mean(axis=1), axis=0).dropna()
+    if cfg.sector_neutral:
+        sec = pd.Series({c: COIN2SEC.get(c, "OTHER") for c in dev.columns})
+        counts = sec.value_counts()
+        sec = sec.map(lambda s: s if counts[s] >= 2 else "OTHER")   # merge singletons (need ≥2 to demean)
+        resid = (dev - dev.T.groupby(sec).transform("mean").T).dropna()
+    else:
+        resid = dev.sub(dev.mean(axis=1), axis=0).dropna()
     z = (resid / resid.rolling(cfg.zwin, min_periods=24).std()).reindex(resid.index)
     return resid, z
 
