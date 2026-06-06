@@ -243,10 +243,11 @@ def fig_butterfly(positions, z_last, cfg):
         ax.scatter([zc], [y], s=70, color=col, edgecolor="white", lw=0.8, zorder=4)
         ax.annotate(c, (zc, y), fontsize=7, xytext=(0, 7), textcoords="offset points", ha="center")
     if zs_held:
-        xc = float(np.mean(zs_held))
-        ax.axvline(xc, color="#1d4ed8", ls="--", lw=1.1)
-        ax.annotate(f"book x≈{xc:+.1f}σ", (xc, ze - zx), fontsize=8, color="#1d4ed8",
-                    xytext=(4, -2), textcoords="offset points")
+        xc = float(np.mean(np.abs(zs_held)))   # avg |dislocation| — how far the typical leg is from exit
+        for sgn in (-1, 1):
+            ax.axvline(sgn * xc, color="#1d4ed8", ls="--", lw=1.0)
+        ax.annotate(f"avg |z|≈{xc:.1f}σ  (legs converge toward the green band)", (xc, ze - zx + 0.05),
+                    fontsize=8, color="#1d4ed8", xytext=(5, 0), textcoords="offset points")
     ax.annotate("PROFIT (gap closes)", (0, ze - zx + 0.15), ha="center", color="#b91c1c", fontsize=8)
     ax.annotate("← short legs", (zs - 0.3, -(zs - ze) + 0.3), ha="right", color="#dc2626", fontsize=7)
     ax.annotate("long legs →", (-zs + 0.3, -(zs - ze) + 0.3), ha="left", color="#2563eb", fontsize=7)
