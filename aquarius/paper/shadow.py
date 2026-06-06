@@ -30,7 +30,8 @@ class ShadowConfig:
     k_vol: float = 0.10
     k_impact: float = 100.0      # impact bps = K*sqrt(participation)
     carry_annual: float = 20.0   # %/yr holding drag (funding/borrow), pessimistic
-    gross: float = 100_000.0     # total gross $ across legs (avg, when vol-scaled)
+    gross: float = 100_000.0     # capital base; return/DD are reported as % of this
+    leverage: float = 1.0        # deploy leverage x gross of notional — return & DD scale with it
     # --- sizing (findings-15/16: same Sharpe, ~35% smaller tail) ---
     vol_scaled: bool = True      # size each leg ∝ 1/(trailing residual vol) instead of equal $
     vol_clip: float = 3.0        # cap the inverse-vol multiplier to [1/clip, clip]
@@ -79,7 +80,7 @@ def run_shadow(close: pd.DataFrame, tr: pd.DataFrame, dvol: pd.DataFrame,
     resid, z = residualize(close, cfg)
     coins = list(resid.columns)
     n = len(resid)
-    base = cfg.gross / len(coins)                   # avg $/leg
+    base = cfg.leverage * cfg.gross / len(coins)    # avg $/leg (deployed = leverage x capital)
     carry_bar = cfg.carry_annual / 100 * 1e4 / PPY  # bps per bar
     idx = resid.index.to_numpy()
 

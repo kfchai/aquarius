@@ -36,6 +36,7 @@ EXCHANGE = os.environ.get("EXCHANGE", "bybit")
 SOURCE = os.environ.get("SOURCE", "live")           # 'live' | 'local'
 N_COINS = int(os.environ.get("N_COINS", "28"))   # breadth (findings-13/16)
 GROSS = float(os.environ.get("GROSS", "100000"))
+LEVERAGE = float(os.environ.get("LEVERAGE", "1.3"))   # vol-scaled -5.0% DD x1.3 -> ~6.5% budget
 DAYS = int(os.environ.get("DAYS", "30"))
 DATA_DIR = pathlib.Path(os.environ.get("DATA_DIR", str(ROOT / "data" / "shadow")))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -45,7 +46,7 @@ DB_FILE = DATA_DIR / "shadow.db"            # durable truth — per-bar P&L + tr
 COINS = ["BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "AVAX", "LINK", "LTC", "ADA",
          "NEAR", "DOT", "ATOM", "UNI", "AAVE", "FIL", "ETC", "XLM", "ALGO", "ICP",
          "HBAR", "GRT", "SAND", "MANA", "AXS", "CRV", "INJ", "RUNE", "EGLD", "FLOW"]
-CFG = ShadowConfig(gross=GROSS)
+CFG = ShadowConfig(gross=GROSS, leverage=LEVERAGE)
 log = logging.getLogger("aquarius")
 
 
@@ -355,7 +356,7 @@ def compute():
         "updated": dti[-1].isoformat(), "computed_at": now_iso,
         "live_since": live_since, "forward_hours": fwd_hours,
         "source": SOURCE, "exchange": EXCHANGE, "n_coins": len(coins), "coins": coins,
-        "gross": GROSS, "window_days": DAYS,
+        "gross": GROSS, "leverage": LEVERAGE, "window_days": DAYS,
         "net_pnl": round(float(eq[-1])), "pct": round(float(eq[-1] / GROSS * 100), 2),
         "ann_pct": round(float(eq[-1] / GROSS * 100 / yrs)), "sharpe": round(sharpe, 2),
         "maxdd": round(float(dd.min())), "maxdd_pct": round(float(dd.min() / GROSS * 100), 2),

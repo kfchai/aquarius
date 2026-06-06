@@ -88,8 +88,8 @@ PAGE = """
 </style></head><body><div class="wrap">
 <h1>Aquarius · shadow portal <span style="color:#64748b;font-weight:400;font-size:12px">paper — no orders sent</span></h1>
 <div class="sub">cross-sectional reversal basket · {{s.exchange}}/{{s.source}} · {{s.n_coins}} legs ·
- ${{ '{:,.0f}'.format(s.gross) }} gross · <b>forward-only</b> ({{s.forward_hours}}h live) ·
- updated {{s.updated[:16].replace('T',' ')}}Z</div>
+ ${{ '{:,.0f}'.format(s.gross) }} capital · {{s.leverage|default(1)}}× lev (vol-scaled) ·
+ <b>forward-only</b> ({{s.forward_hours}}h live) · updated {{s.updated[:16].replace('T',' ')}}Z</div>
 {% if err %}<div class="err">last cycle error: {{err}} &nbsp; (try EXCHANGE=okx or kraken if geo-blocked)</div>{% endif %}
 <div class="cards">
   <div class="card"><div class="k">Net P&L</div><div class="v {{'pos' if s.net_pnl>=0 else 'neg'}}">${{ '{:,}'.format(s.net_pnl) }}</div></div>
