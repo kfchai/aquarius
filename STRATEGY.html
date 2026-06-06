@@ -441,9 +441,43 @@ calm counterparty who steps in and gets paid for patience.</p>
 <p>This is a real, decades-old phenomenon — finance professors call it &quot;short-term reversal,&quot;
 and stat-arb desks have traded it in stocks since the 1990s. <strong>It's not a secret and not a
 trick.</strong> Our advantage isn't that we discovered something new; it's that crypto lets a small
-player actually capture it (see §8).</p>
+player actually capture it (see §9).</p>
 <hr>
-<h2 id="5-why-many-coins-instead-of-one">5. Why many coins instead of one</h2>
+<h2 id="5-what-drives-the-pattern">5. What drives the pattern</h2>
+<p>The rubber band only works because two forces are out of balance: something <strong>pushes</strong> a coin
+out of line quickly, and something else <strong>pulls</strong> it back more slowly.</p>
+<p><strong>What pushes a coin out of line (the stretch)</strong> — all temporary, non-fundamental pressure:</p>
+<ul>
+<li><strong>Someone needs to trade now.</strong> A whale, a fund rebalancing, an OTC desk unwinding — a big
+order in a thin market shoves one coin's price away from its peers. This is the main driver.</li>
+<li><strong>Forced liquidations.</strong> Crypto runs on heavy leverage; when a coin dips, leveraged bets get
+auto-closed, dumping at any price and <em>overshooting</em>. (This is exactly why the strategy earns
+<em>more</em> in panics — more forced flow to lean against.)</li>
+<li><strong>Retail overreaction.</strong> A tweet, a listing, a fear headline — people pile into or bail out
+of one coin and overshoot before the news is digested.</li>
+<li><strong>Thin, fragmented liquidity.</strong> Shallow order books mean a given order moves the price more —
+a bigger stretch per dollar traded.</li>
+</ul>
+<p><strong>What pulls it back (the snap)</strong> — because the cause was <em>flow, not fundamentals</em>, nothing
+holds the coin out of line:</p>
+<ul>
+<li><strong>Patient capital steps in.</strong> Market makers and arbitrageurs (and us) buy what's being dumped
+and sell what's being grabbed; as that demand for immediacy is satisfied, the price settles
+back in line. <em>We get paid for being that patient counterparty.</em></li>
+<li><strong>The overreaction fades</strong> and the leverage flush finishes, so the overshoot bounces back.</li>
+</ul>
+<p><strong>Why we measure it <em>relative to the pack</em>.</strong> A coin's move has two parts: the <strong>market-wide</strong>
+part (which can genuinely trend, and does <em>not</em> reliably revert) and the <strong>coin-specific</strong> part
+(driven by the flow above, which <em>does</em> revert). Subtracting the pack throws away the trending
+part and keeps only the revertible part — which is why this is far more reliable than betting
+on a lone coin reverting.</p>
+<p><strong>The flip side.</strong> Sometimes a coin moves for a <em>real, lasting</em> reason — a hack, a delisting, a
+genuine re-rating. Those don't revert, and they're the source of our occasional large losses.
+The bet is that flow-driven dislocations dominate <em>on average</em>; the stops (§7) handle the ones
+that don't.</p>
+<p><em>(Crypto supercharges every one of these forces — see §9.)</em></p>
+<hr>
+<h2 id="6-why-many-coins-instead-of-one">6. Why many coins instead of one</h2>
 <p>Three reasons, all important:</p>
 <ul>
 <li><strong>The pull is gentle.</strong> On any single coin the effect is small and noisy. But run it across
@@ -455,7 +489,7 @@ bad leg out of 35 — a scratch, not a wound, <em>as long as each leg is sized s
 its price. Spreading across many coins lets the whole strategy hold more capital.</li>
 </ul>
 <hr>
-<h2 id="6-what-can-go-wrong--and-how-we-handle-it">6. What can go wrong — and how we handle it</h2>
+<h2 id="7-what-can-go-wrong--and-how-we-handle-it">7. What can go wrong — and how we handle it</h2>
 <p>This strategy has a specific risk personality: <strong>lots of small wins, with occasional larger
 losses.</strong> (The opposite of a lottery ticket.) The dangerous moment is when a coin we're
 holding <em>doesn't</em> revert — it keeps stretching away. Our defenses, in order of importance:</p>
@@ -477,7 +511,7 @@ case we pull risk down rather than trusting the average.</li>
 trade that <em>would</em> have reverted). That's the price of not blowing up, and we pay it on
 purpose.</p>
 <hr>
-<h2 id="7-the-shape-of-the-returns">7. The shape of the returns</h2>
+<h2 id="8-the-shape-of-the-returns">8. The shape of the returns</h2>
 <ul>
 <li><strong>Wins often, wins small</strong> (historically ~70–75% of trades profitable).</li>
 <li><strong>Loses rarely, but a bad leg can be large</strong> — which is exactly why the stops and the
@@ -486,7 +520,7 @@ diversification matter.</li>
 consistent gains — not home-run bets.</li>
 </ul>
 <hr>
-<h2 id="8-why-crypto-and-not-stocks">8. Why crypto, and not stocks?</h2>
+<h2 id="9-why-crypto-and-not-stocks">9. Why crypto, and not stocks?</h2>
 <p>The <em>same</em> effect exists in stocks, commodities, bonds, and currencies — it's universal. But
 in those markets it's been competed down to razor-thin margins by giant funds with near-zero
 costs, and a small account can't profitably trade it there.</p>
@@ -501,7 +535,7 @@ costs, and a small account can't profitably trade it there.</p>
 harvest cheaply, at small size, what big markets reserve for giants. That advantage will
 slowly shrink as crypto matures, which we accept.</p>
 <hr>
-<h2 id="9-how-big-can-it-get">9. How big can it get?</h2>
+<h2 id="10-how-big-can-it-get">10. How big can it get?</h2>
 <p>This is a <strong>small-capital edge by nature.</strong> Our own trading starts to move prices once the
 book gets large, which eats the return. Roughly:</p>
 <ul>
@@ -512,7 +546,7 @@ book gets large, which eats the return. Roughly:</p>
 <p>It will <strong>never</strong> be a giant-fund strategy. It's designed to start small (under $10k),
 compound slowly, and scale only on proof — which suits its nature perfectly.</p>
 <hr>
-<h2 id="10-what-weve-actually-proven">10. What we've actually proven</h2>
+<h2 id="11-what-weve-actually-proven">11. What we've actually proven</h2>
 <p>We built this to <em>try to kill it</em> cheaply before risking money. It survived every test:</p>
 <ul>
 <li><strong>It's real, not a data artifact</strong> — it holds up even when we add a realistic trading delay
@@ -528,7 +562,7 @@ the pack, with a roughly two-day half-life.</li>
 that's an idealized backtest. The real, live number will be lower — we just don't yet know by
 how much. Which is why we're being careful.</p>
 <hr>
-<h2 id="11-where-it-stands-now-and-whats-next">11. Where it stands now, and what's next</h2>
+<h2 id="12-where-it-stands-now-and-whats-next">12. Where it stands now, and what's next</h2>
 <ul>
 <li>✅ <strong>Research &amp; backtesting:</strong> passed.</li>
 <li>✅ <strong>Paper trading (shadow mode):</strong> built and running. The strategy runs on <em>live</em> market
