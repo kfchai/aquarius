@@ -138,6 +138,19 @@ def _fmt_trades(rows, notional):
             for coin, side, ets, xts, g, reason in rows]
 
 
+def db_stats():
+    """Quick persistence check for the boot log: does the durable store already hold data?"""
+    if not DB_FILE.exists():
+        return False, 0, None
+    con = _db()
+    try:
+        n = con.execute("SELECT COUNT(*) FROM pnl").fetchone()[0]
+        r = con.execute("SELECT v FROM meta WHERE k='live_since'").fetchone()
+    finally:
+        con.close()
+    return True, n, (r[0] if r else None)
+
+
 def load_recent_trades(live_ms: int, notional: float, limit: int = 30):
     con = _db()
     try:

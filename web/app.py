@@ -184,6 +184,12 @@ def _boot():
     mins = float(os.environ.get("REFRESH_MINUTES", "3"))
     log.info("boot — exchange=%s source=%s coins=%d gross=%s cadence=%smin data_dir=%s",
              pc.EXCHANGE, pc.SOURCE, pc.N_COINS, f"{pc.GROSS:,.0f}", mins, pc.DATA_DIR)
+    exists, n_bars, live = pc.db_stats()
+    log.info("persistence check — db=%s exists=%s prior_bars=%d live_since=%s",
+             pc.DB_FILE, exists, n_bars, live)
+    if not exists and "DATA_DIR" not in os.environ:
+        log.warning("DATA_DIR env not set -> writing to ephemeral %s (LOST on redeploy). "
+                    "Mount a Railway volume and set DATA_DIR to its mount path to persist.", pc.DATA_DIR)
     if pc.load_state() is None:
         log.info("no prior state — kicking first cycle")
         threading.Thread(target=cycle, daemon=True).start()   # populate first paint
