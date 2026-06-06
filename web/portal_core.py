@@ -129,6 +129,39 @@ def load_series():
     return np.array(ts, dtype="int64"), np.array(dl, dtype=float), trades, (live[0] if live else None)
 
 
+def _fmt_trades(rows, notional):
+    """Format DB trade rows for display. $ P&L ≈ gross residual move x leg notional."""
+    return [{"coin": coin, "side": "SHORT" if side < 0 else "LONG",
+             "exit": pd.to_datetime(int(xts), unit="ms", utc=True).strftime("%m-%d %H:%M"),
+             "hold": int((xts - ets) / 3_600_000), "reason": reason,
+             "gross_bps": round(g), "pnl": round(g / 1e4 * notional)}
+            for coin, side, ets, xts, g, reason in rows]
+
+
+def load_recent_trades(live_ms: int, notional: float, limit: int = 30):
+    con = _db()
+    try:
+        rows = con.execute("SELECT coin,side,entry_ts,exit_ts,gross_bps,reason FROM trades "
+                           "WHERE exit_ts>=? ORDER BY exit_ts DESC LIMIT ?", (live_ms, limit)).fetchall()
+    finally:
+        con.close()
+    return _fmt_trades(rows, notional)
+
+
+def load_closed_page(live_since: str, notional: float, page: int = 1, per_page: int = 12):
+    """One page of forward closed trades, newest first. Returns (rows, total, n_pages)."""
+    live_ms = int(pd.Timestamp(live_since).value // 1_000_000) if live_since else 0
+    con = _db()
+    try:
+        total = con.execute("SELECT COUNT(*) FROM trades WHERE exit_ts>=?", (live_ms,)).fetchone()[0]
+        rows = con.execute("SELECT coin,side,entry_ts,exit_ts,gross_bps,reason FROM trades "
+                           "WHERE exit_ts>=? ORDER BY exit_ts DESC LIMIT ? OFFSET ?",
+                           (live_ms, per_page, (page - 1) * per_page)).fetchall()
+    finally:
+        con.close()
+    return _fmt_trades(rows, notional), total, max(1, (total + per_page - 1) // per_page)
+
+
 def _write_state_atomic(state: dict):
     tmp = STATE_FILE.with_suffix(".tmp")
     tmp.write_text(json.dumps(state), encoding="utf-8")
@@ -294,6 +327,7 @@ def compute():
         "n_trades": len(closed), "open_legs": len(res.positions),
         "coin_net": round(float(nd[-1])), "reasons": reasons,
         "positions": posn,
+        "closed": load_recent_trades(live_ms, notional),
         "img_capital": fig_capital(days, eq, dd, fwd_hours),
         "img_butterfly": fig_butterfly(res.positions, res.z_last, CFG),
         "img_swarm": fig_swarm(res.z_last, pos_simple, CFG),

@@ -14,7 +14,7 @@ import traceback
 from collections import deque
 
 from apscheduler.schedulers.background import BackgroundScheduler
-from flask import Flask, Response, jsonify, redirect, render_template_string
+from flask import Flask, Response, jsonify, redirect, render_template_string, request
 
 import portal_core as pc
 
@@ -75,6 +75,8 @@ PAGE = """
  .card .k{color:#94a3b8;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
  .card .v{font-size:20px;font-weight:600;margin-top:3px}
  .pos{color:#22c55e}.neg{color:#ef4444}
+ .ttl{font-size:12px;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;margin:2px 4px 8px}
+ .pg{margin-top:8px;font-size:13px;display:flex;gap:14px;align-items:center} .pg .dim{color:#64748b}
  .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
  .panel{background:#131a2e;border:1px solid #1f2a44;border-radius:10px;padding:8px}
  img{width:100%;border-radius:6px;display:block}
@@ -105,11 +107,28 @@ PAGE = """
   <div class="panel"><img src="data:image/png;base64,{{s.img_swarm}}"></div>
   <div class="panel"><img src="data:image/png;base64,{{s.img_neutral}}"></div>
 </div>
-<div class="panel" style="margin-top:14px">
-  <table><tr><th>coin</th><th>side</th><th>z now</th><th>entry z</th><th>unrealized $</th></tr>
-  {% for p in s.positions %}<tr><td>{{p.coin}}</td><td>{{p.side}}</td><td>{{p.z}}</td><td>{{p.entry_z}}</td>
-   <td class="{{'pos' if p.unreal>=0 else 'neg'}}">{{ '{:+,}'.format(p.unreal) }}</td></tr>{% endfor %}
-  </table>
+<div class="grid" style="margin-top:14px">
+  <div class="panel">
+    <div class="ttl">Open positions ({{s.positions|length}})</div>
+    <table><tr><th>coin</th><th>side</th><th>z now</th><th>entry z</th><th>unrealized $</th></tr>
+    {% for p in s.positions %}<tr><td>{{p.coin}}</td><td>{{p.side}}</td><td>{{p.z}}</td><td>{{p.entry_z}}</td>
+     <td class="{{'pos' if p.unreal>=0 else 'neg'}}">{{ '{:+,}'.format(p.unreal) }}</td></tr>{% endfor %}
+    {% if not s.positions %}<tr><td colspan="5" style="color:#64748b">none open</td></tr>{% endif %}
+    </table>
+  </div>
+  <div class="panel">
+    <div class="ttl">Closed positions — forward · {{ctotal}} total (newest first)</div>
+    <table><tr><th>coin</th><th>side</th><th>exit (UTC)</th><th>held h</th><th>exit</th><th>P&L $</th></tr>
+    {% for t in closed %}<tr><td>{{t.coin}}</td><td>{{t.side}}</td><td>{{t.exit}}</td><td>{{t.hold}}</td>
+     <td>{{t.reason}}</td><td class="{{'pos' if t.pnl>=0 else 'neg'}}">{{ '{:+,}'.format(t.pnl) }}</td></tr>{% endfor %}
+    {% if not closed %}<tr><td colspan="6" style="color:#64748b">none closed yet (forward record just started)</td></tr>{% endif %}
+    </table>
+    {% if cpages>1 %}<div class="pg">
+      {% if cp>1 %}<a href="?cp={{cp-1}}">‹ prev</a>{% else %}<span class="dim">‹ prev</span>{% endif %}
+      <span class="dim">page {{cp}} / {{cpages}}</span>
+      {% if cp<cpages %}<a href="?cp={{cp+1}}">next ›</a>{% else %}<span class="dim">next ›</span>{% endif %}
+    </div>{% endif %}
+  </div>
 </div>
 <div class="sub" style="margin-top:12px">exit reasons: {% for k,v in s.reasons.items() %}{{k}}={{v}} {% endfor %}
  &nbsp;·&nbsp; <form action="/refresh" method="post" style="display:inline"><button class="btn">Refresh now</button></form>
@@ -128,7 +147,14 @@ def home():
     s = pc.load_state()
     if not s:
         return render_template_string(EMPTY, err=_status["last_error"])
-    return render_template_string(PAGE, s=s, err=_status["last_error"])
+    try:
+        cp = max(1, int(request.args.get("cp", 1)))
+    except (TypeError, ValueError):
+        cp = 1
+    notional = s["gross"] / max(s["n_coins"], 1)
+    closed, ctotal, cpages = pc.load_closed_page(s.get("live_since"), notional, cp)
+    return render_template_string(PAGE, s=s, err=_status["last_error"],
+                                  closed=closed, cp=min(cp, cpages), cpages=cpages, ctotal=ctotal)
 
 
 @app.route("/health")
