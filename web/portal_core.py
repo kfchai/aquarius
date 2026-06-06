@@ -222,12 +222,18 @@ def fig_butterfly(positions, z_last, cfg):
     x = np.linspace(-7, 7, 600)
     tent = np.clip(ze - np.abs(x), -(zs - ze), ze - zx)
     fig, ax = plt.subplots(figsize=(8.4, 5.0))
+    # take-profit band: legs are closed when the dislocation reverts into |z| <= z_exit
+    ax.axvspan(-zx, zx, color="#16a34a", alpha=0.18, zorder=1)
+    for b in (-zx, zx):
+        ax.axvline(b, color="#16a34a", ls="--", lw=0.9, zorder=1)
     ax.plot(x, tent, color="#b91c1c", lw=2.4, zorder=2)
     ax.axhline(0, color="#888", lw=0.6)
     for b in (-ze, ze):
         ax.axvline(b, color="#9ca3af", ls=":", lw=0.9)
     for b in (-zs, zs):
         ax.axvline(b, color="#dc2626", ls=":", lw=0.9)
+    ax.annotate(f"take-profit |z|≤{zx:g}σ", (0, -(zs - ze) + 0.2), ha="center", va="bottom",
+                color="#15803d", fontsize=8)
     zs_held = []
     for c, p in positions.items():
         zc = z_last.get(c, 0.0)
