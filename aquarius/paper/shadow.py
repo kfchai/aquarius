@@ -51,7 +51,8 @@ class ShadowConfig:
     sector_neutral: bool = True  # demean residual within sector (findings-17: +7% Sharpe, smaller tail)
     # --- tail guards (findings-13: thin-coin idiosyncratic risk the z-stop alone misses) ---
     max_leg_loss_bps: float = 400.0    # hard per-leg MtM stop on adverse residual move from entry
-    min_dollar_vol: float = 250_000.0  # liquidity floor: trailing-median hourly $vol to trade a coin
+    liq_frac: float = 0.15             # skip a coin if its $vol is below this x the basket-median (venue-indep)
+    min_dollar_vol: float = 250_000.0  # (legacy, unused — replaced by the relative liq_frac check)
     liq_window: int = 168              # bars for the trailing liquidity median
     stale_bars: int = 12               # identical-close bars -> treat as halted/delisted, force-exit
     rebalance_bps_per_bar: float = 0.05  # hedge-rebalance drag while held (deferred cost, now charged)
@@ -118,9 +119,15 @@ def run_shadow(close: pd.DataFrame, tr: pd.DataFrame, dvol: pd.DataFrame,
             return base
         v = VOL[c][i] if (np.isfinite(VOL[c][i]) and VOL[c][i] > 0) else vbar
         return base * float(np.clip(vbar / v, 1 / cfg.vol_clip, cfg.vol_clip))
-    # liquidity floor: trailing-median hourly $vol must clear min_dollar_vol to be tradeable
-    LIQ = {c: (dvol.reindex(resid.index)[c].rolling(cfg.liq_window, min_periods=24).median()
-               .to_numpy() >= cfg.min_dollar_vol) for c in coins}
+    # liquidity guard — CROSS-SECTIONAL & venue-independent: skip a coin only if its trailing-median
+    # $vol is thin RELATIVE TO THE BASKET (< liq_frac x the median coin). A fixed $ floor broke live
+    # (calibrated to Binance, but Bybit spot is thinner -> it wholesale-filtered the universe and
+    # false-exited majors like BNB). Relative-to-basket scales with whatever the venue's volumes are.
+    dvn = dvol.reindex(resid.index).replace(0, np.nan)
+    medvol = dvn.rolling(cfg.liq_window, min_periods=24).median()
+    basket_med = medvol.median(axis=1)
+    liq_df = medvol.ge(cfg.liq_frac * basket_med, axis=0)
+    LIQ = {c: liq_df[c].fillna(True).to_numpy() for c in coins}   # default tradeable while warming up
     # staleness: consecutive identical-close bars -> halted/delisted
     cl = close.reindex(resid.index)
     STALE = {c: (cl[c].diff() == 0).astype(int).groupby((cl[c].diff() != 0).cumsum()).cumcount()

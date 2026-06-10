@@ -36,7 +36,7 @@ EXCHANGE = os.environ.get("EXCHANGE", "bybit")
 SOURCE = os.environ.get("SOURCE", "live")           # 'live' | 'local'
 N_COINS = int(os.environ.get("N_COINS", "28"))   # breadth (findings-13/16)
 GROSS = float(os.environ.get("GROSS", "100000"))
-LEVERAGE = float(os.environ.get("LEVERAGE", "1.3"))   # vol-scaled -5.0% DD x1.3 -> ~6.5% budget
+LEVERAGE = float(os.environ.get("LEVERAGE", "1.2"))   # vol-scaled -5.3% DD x1.2 -> ~6.4% (within budget)
 DAYS = int(os.environ.get("DAYS", "30"))
 DATA_DIR = pathlib.Path(os.environ.get("DATA_DIR", str(ROOT / "data" / "shadow")))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -311,6 +311,21 @@ def compute():
     res = run_shadow(close, tr, dv, CFG)
     notional = GROSS / len(coins)
     now_iso = pd.Timestamp(t0, unit="s", tz="utc").isoformat()
+
+    # --- liquidity-filter diagnostic: is the guard wrongly blocking dislocated coins? ---
+    dvn = dv.reindex(res.index).replace(0, np.nan)
+    medvol = dvn.rolling(168, min_periods=24).median().iloc[-1]
+    basket_med = float(np.nanmedian(medvol.to_numpy()))
+    disloc = []
+    for c in coins:
+        zc = res.z_last.get(c, 0.0)
+        if abs(zc) >= CFG.z_entry and c not in res.positions:
+            thin = (medvol[c] or 0) < CFG.liq_frac * basket_med
+            tag = " [BLOCKED:liq]" if thin else " [pending/lag]"
+            disloc.append(f"{c}(z={zc:+.1f},${(medvol[c] or 0)/1e6:.1f}M{tag})")
+    log.info("filters: $-vol %.2f–%.0fM (basket-median %.1fM)/%d coins · dislocated-not-open: %s",
+             float(np.nanmin(medvol)) / 1e6, float(np.nanmax(medvol)) / 1e6, basket_med / 1e6,
+             len(coins), ", ".join(disloc) if disloc else "none (calm — genuinely nothing to open)")
 
     # --- persist this cycle's per-bar P&L + closed trades to the durable store, then read back
     #     the FULL accumulated forward record (survives redeploys via the /data volume) ---
